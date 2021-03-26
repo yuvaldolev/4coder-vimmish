@@ -1934,7 +1934,7 @@ vim_end_command(Application_Links* app, b32 command_was_complete) {
 function void
 vim_select_mapid_for_mode(Application_Links* app, Buffer_ID buffer, Vim_Mode mode) {
     String_ID file_map_id = vars_save_string_lit("keys_file");
-
+    
     Managed_Scope buffer_scope = buffer_get_managed_scope(app, buffer);
     Command_Map_ID* map_id_ptr = scope_attachment(app, buffer_scope, buffer_map_id, Command_Map_ID);
     Command_Map_ID* insert_map_id_ptr = scope_attachment(app, buffer_scope, vim_buffer_insert_map_id, Command_Map_ID);
@@ -2094,9 +2094,18 @@ vim_enter_mode(Application_Links* app, Vim_Mode mode, b32 append = false) {
         } break;
         
         case VimMode_Visual:
-        case VimMode_VisualLine:
         case VimMode_VisualBlock: {
             // ...
+        } break;
+        
+        case VimMode_VisualLine: {
+            View_ID view = get_active_view(app, Access_ReadVisible);
+            i64 pos = view_get_cursor_pos(app, view);
+            Buffer_Cursor cursor = view_compute_cursor(app, view, seek_pos(pos));
+            Vec2_f32 p = view_relative_xy_of_pos(app, view, cursor.line, pos);
+            p.x = 0.f;
+            i64 mark_pos = view_pos_at_relative_xy(app, view, cursor.line, p);
+            view_set_mark(app, view, seek_pos(mark_pos));
         } break;
     }
     
@@ -2159,7 +2168,7 @@ CUSTOM_COMMAND_SIG(vim_enter_append_mode) {
 }
 
 CUSTOM_COMMAND_SIG(vim_enter_append_eol_mode) {
-    seek_end_of_line(app);
+    seek_end_of_textual_line(app);
     vim_enter_mode(app, VimMode_Insert);
 }
 
@@ -2300,6 +2309,19 @@ vim_execute_motion(Application_Links* app,
             break;
         }
     }
+    
+    i64 line_start = get_line_start_pos_from_pos(app, buffer, result.seek_pos);
+    i64 line_end = get_line_end_pos_from_pos(app, buffer, result.seek_pos);
+    
+    // NOTE: Adjust cursor, so that we cannot go past the line end position,
+    // if we're in insert or visual insert mode.
+    if ((VimMode_Insert != vim_state.mode) &&
+        (VimMode_VisualInsert != vim_state.mode) &&
+        (result.seek_pos >= line_end) &&
+        (result.seek_pos != line_start)) {
+        result.seek_pos = line_end - 1;
+    }
+    
     result.range_ = vim_apply_range_style(app, view, buffer, Ii64(start_pos, result.seek_pos), result.style);
     return result;
 }
@@ -2869,7 +2891,7 @@ VIM_TEXT_OBJECT(vim_text_object_inner_single_quotes) {
 function
 VIM_TEXT_OBJECT(vim_text_object_inner_word) {
     Vim_Text_Object_Result result = vim_text_object(start_pos);
-    result.range = enclose_boundary(app, buffer, Ii64(start_pos + 1), vim_boundary_word);
+    result.range = enclose_boundary(app, buffer, Ii64(start_pos, start_pos + 1), vim_boundary_word);
     return result;
 }
 
@@ -5057,7 +5079,7 @@ CUSTOM_DOC("[vim] Saves the current buffer.")
     save(app);
 }
 
-CUSTOM_COMMAND_SIG(wq)
+CUSTOM_COMMAND_SIG(x)
 CUSTOM_DOC("[vim] Saves the current buffer and closes the current panel, or 4coder if this is the last panel.")
 {
     View_ID view = get_active_view(app, Access_Always);
@@ -5076,7 +5098,7 @@ CUSTOM_DOC("[vim] Closes 4coder.")
     exit_4coder(app);
 }
 
-CUSTOM_COMMAND_SIG(wqa)
+CUSTOM_COMMAND_SIG(xa)
 CUSTOM_DOC("[vim] Saves all buffers and closes 4coder.")
 {
     save_all_dirty_buffers(app);
@@ -5105,6 +5127,7 @@ CUSTOM_COMMAND_SIG(vim_start_mouse_select)
 CUSTOM_DOC("[vim] Sets the cursor position and mark to the mouse position and enters normal mode.")
 {
     View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     
     Mouse_State mouse = get_mouse_state(app);
     i64 pos = view_pos_from_xy(app, view, V2f32(mouse.p));
@@ -5116,6 +5139,12 @@ CUSTOM_DOC("[vim] Sets the cursor position and mark to the mouse position and en
     
     vim_enter_normal_mode(app);
     
+    i64 line_start = get_line_start_pos_from_pos(app, buffer, pos);
+    i64 line_end = get_line_end_pos_from_pos(app, buffer, pos);
+    if ((pos >= line_end) && (pos != line_start)) {
+        pos = line_end - 1;
+    }
+    
     view_set_cursor_and_preferred_x(app, view, seek_pos(pos));
     view_set_mark(app, view, seek_pos(pos));
 }
@@ -5124,10 +5153,17 @@ CUSTOM_COMMAND_SIG(vim_mouse_drag)
 CUSTOM_DOC("[vim] If the mouse left button is pressed, sets the cursor position to the mouse position, and enables the preferred visual mode.")
 {
     View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     
     Mouse_State mouse = get_mouse_state(app);
     if (mouse.l) {
         i64 pos = view_pos_from_xy(app, view, V2f32(mouse.p));
+        
+        i64 line_start = get_line_start_pos_from_pos(app, buffer, pos);
+        i64 line_end = get_line_end_pos_from_pos(app, buffer, pos);
+        if ((pos >= line_end) && (pos != line_start)) {
+            pos = line_end - 1;
+        }
 #if VIM_FILE_BAR_ON_BOTTOM
         // @Hack
         // Buffer_Cursor cursor = view_compute_cursor(app, view, seek_pos(pos));
@@ -5890,7 +5926,7 @@ BUFFER_HOOK_SIG(vim_begin_buffer) {
 
 function void 
 vim_tick(Application_Links *app, Frame_Info frame_info) {
-    default_tick(app, frame_info);
+    /* default_tick(app, frame_info); */
     
     ProfileScope(app, "[vim] tick");
     
@@ -6243,7 +6279,7 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     String_ID global_map_id = vars_save_string_lit("keys_global");
     String_ID file_map_id = vars_save_string_lit("keys_file");
     String_ID code_map_id = vars_save_string_lit("keys_code");
-
+    
     MappingScope();
     SelectMapping(mapping);
     
@@ -6362,10 +6398,10 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     Bind(move_right_alpha_numeric_or_camel_boundary,          KeyCode_Right, KeyCode_Alt);
     Bind(vim_backspace_char,                                  KeyCode_Backspace);
     Bind(comment_line_toggle,                                 KeyCode_Semicolon, KeyCode_Control);
-    Bind(word_complete,                                       KeyCode_Tab);
+    Bind(f4_autocomplete_or_indent,                           KeyCode_Tab);
     // Bind(word_complete_drop_down,                             KeyCode_N, KeyCode_Control);
     Bind(auto_indent_range,                                   KeyCode_Tab, KeyCode_Control);
-    Bind(auto_indent_line_at_cursor,                          KeyCode_Tab, KeyCode_Shift);
+    Bind(f4_unindent,                                         KeyCode_Tab, KeyCode_Shift);
     Bind(word_complete_drop_down,                             KeyCode_Tab, KeyCode_Shift, KeyCode_Control);
     Bind(write_block,                                         KeyCode_R, KeyCode_Alt);
     Bind(write_todo,                                          KeyCode_T, KeyCode_Alt);
@@ -6541,6 +6577,13 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     VimBind(vim_split_window_vertical,                           vim_key(KeyCode_W, KeyCode_Control), vim_key(KeyCode_V, KeyCode_Control));
     VimBind(vim_split_window_horizontal,                         vim_key(KeyCode_W, KeyCode_Control), vim_key(KeyCode_S));
     VimBind(vim_split_window_horizontal,                         vim_key(KeyCode_W, KeyCode_Control), vim_key(KeyCode_S, KeyCode_Control));
+    VimBind(q,                                                   vim_key(KeyCode_W, KeyCode_Control), vim_key(KeyCode_Q));
+    VimBind(q,                                                   vim_key(KeyCode_W, KeyCode_Control), vim_key(KeyCode_Q, KeyCode_Control));
+    
+    VimBind(windmove_panel_left,                                 vim_key(KeyCode_H, KeyCode_Control));
+    VimBind(windmove_panel_down,                                 vim_key(KeyCode_J, KeyCode_Control));
+    VimBind(windmove_panel_up,                                   vim_key(KeyCode_K, KeyCode_Control));
+    VimBind(windmove_panel_right,                                vim_key(KeyCode_L, KeyCode_Control));
     
     VimBind(center_view,                                         vim_key(KeyCode_Z), vim_key(KeyCode_Z));
     VimBind(vim_view_move_line_to_top,                           vim_key(KeyCode_Z), vim_key(KeyCode_T));
@@ -6565,25 +6608,6 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     VimBind(vim_open_file_in_quotes_in_same_window,              vim_key(KeyCode_G), vim_key(KeyCode_F));
     VimBind(vim_jump_to_definition_under_cursor,                 vim_key(KeyCode_RightBracket, KeyCode_Control));
     
-    VimNameBind(string_u8_litexpr("Files"),                      vim_leader, vim_key(KeyCode_F));
-    VimBind(interactive_new,                                     vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_N));
-    VimBind(interactive_open_or_new,                             vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_E));
-    VimBind(interactive_switch_buffer,                           vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_B));
-    VimBind(interactive_kill_buffer,                             vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_K));
-    VimBind(kill_buffer,                                         vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_D));
-    VimBind(q,                                                   vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_Q));
-    VimBind(qa,                                                  vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_Q, KeyCode_Shift));
-    VimBind(qa,                                                  vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_Q, KeyCode_Shift));
-    VimBind(w,                                                   vim_leader, vim_key(KeyCode_F), vim_key(KeyCode_W));
-    
-    VimNameBind(string_u8_litexpr("Search"),                     vim_leader, vim_key(KeyCode_S));
-    VimBind(list_all_substring_locations_case_insensitive,       vim_leader, vim_key(KeyCode_S), vim_key(KeyCode_S));
-    
-    VimNameBind(string_u8_litexpr("Tags"),                       vim_leader, vim_key(KeyCode_T));
-    VimBind(jump_to_definition,                                  vim_leader, vim_key(KeyCode_T), vim_key(KeyCode_A));
-    
-    VimBind(vim_toggle_line_comment_range_indent_style,          vim_leader, vim_key(KeyCode_C), vim_key(KeyCode_Space));
-    
     VimBind(vim_enter_normal_mode_escape,                        vim_key(KeyCode_Escape));
     VimBind(vim_isearch_word_under_cursor,                       vim_key(KeyCode_8, KeyCode_Shift));
     VimBind(vim_reverse_isearch_word_under_cursor,               vim_key(KeyCode_3, KeyCode_Shift));
@@ -6603,6 +6627,30 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     VimBind(if_read_only_goto_position,                          vim_key(KeyCode_Return));
     VimBind(if_read_only_goto_position_same_panel,               vim_key(KeyCode_Return, KeyCode_Shift));
     
+    VimBind(comment_line_toggle, vim_key(KeyCode_G), vim_key(KeyCode_C), vim_key(KeyCode_C));
+    
+    VimBind(goto_line, vim_leader, vim_key(KeyCode_G));
+    
+    VimBind(interactive_switch_buffer, vim_leader, vim_key(KeyCode_F));
+    VimBind(y4_interactive_switch_buffer_other_panel, vim_leader, vim_key(KeyCode_F, KeyCode_Shift));
+    VimBind(interactive_open_or_new, vim_leader, vim_key(KeyCode_E));
+    VimBind(y4_interactive_open_or_new_other_panel, vim_leader, vim_key(KeyCode_E, KeyCode_Shift));
+    
+    VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_J));
+    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_J, KeyCode_Shift));
+    VimBind(f4_go_to_definition, vim_leader, vim_key(KeyCode_K));
+    VimBind(f4_go_to_definition_same_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
+    VimBind(f4_code_peek, vim_leader, vim_key(KeyCode_P));
+    VimBind(f4_code_peek_clear, vim_leader, vim_key(KeyCode_U));
+    VimBind(f4_code_peek_yank, vim_leader, vim_key(KeyCode_Y));
+    
+    VimBind(list_all_substring_locations_case_insensitive, vim_leader, vim_key(KeyCode_S));
+    VimBind(list_all_locations, vim_leader, vim_key(KeyCode_S, KeyCode_Shift));
+    
+    VimBind(f4_toggle_compilation_expand, vim_leader, vim_key(KeyCode_C));
+    
+    VimBind(f4_switch_syntax_option, vim_leader, vim_key(KeyCode_Comma));
+    
     //
     // Visual Vim Map
     //
@@ -6619,6 +6667,8 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     
     VimBind(vim_isearch_selection,                               vim_key(KeyCode_ForwardSlash));
     VimBind(vim_reverse_isearch_selection,                       vim_key(KeyCode_ForwardSlash, KeyCode_Shift));
+    
+    VimBind(f4_comment_selection, vim_key(KeyCode_G), vim_key(KeyCode_C));
 }
 
 function void
@@ -6640,7 +6690,7 @@ vim_init(Application_Links* app) {
         vim_echo_alert(app, "Warning: Only two-character escape sequences are supported.");
     }
     
-    vim_set_default_colors(app);
+    /* vim_set_default_colors(app); */
 }
 
 function void
