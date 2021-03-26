@@ -2100,7 +2100,18 @@ vim_enter_mode(Application_Links* app, Vim_Mode mode, b32 append = false) {
         
         case VimMode_VisualLine: {
             View_ID view = get_active_view(app, Access_ReadVisible);
+            Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+            
             i64 pos = view_get_cursor_pos(app, view);
+            
+            // Cursor pos.
+            i64 line_start = get_line_end_pos_from_pos(app, buffer, pos);
+            i64 line_end = get_line_end_pos_from_pos(app, buffer, pos);
+            if (pos != line_start) {
+                view_set_cursor_and_preferred_x(app, view, seek_pos(line_end - 1));
+            }
+            
+            // Mark pos.
             Buffer_Cursor cursor = view_compute_cursor(app, view, seek_pos(pos));
             Vec2_f32 p = view_relative_xy_of_pos(app, view, cursor.line, pos);
             p.x = 0.f;
@@ -2310,16 +2321,38 @@ vim_execute_motion(Application_Links* app,
         }
     }
     
+    // Adjust the cursor position, so that we cannot go past the line end position,
+    // if we're in insert or visual insert mode.
     i64 line_start = get_line_start_pos_from_pos(app, buffer, result.seek_pos);
     i64 line_end = get_line_end_pos_from_pos(app, buffer, result.seek_pos);
     
-    // NOTE: Adjust cursor, so that we cannot go past the line end position,
-    // if we're in insert or visual insert mode.
     if ((VimMode_Insert != vim_state.mode) &&
         (VimMode_VisualInsert != vim_state.mode) &&
         (result.seek_pos >= line_end) &&
         (result.seek_pos != line_start)) {
         result.seek_pos = line_end - 1;
+    }
+    
+    // If we're in visual line mode, then the cursor should always be placed at the
+    // end or beginning (according to the mark position) of the current line.
+    i64 mark_pos = view_get_mark_pos(app, view);
+    i64 mark_line_start = get_line_start_pos_from_pos(app, buffer, mark_pos);
+    i64 mark_line_end = get_line_end_pos_from_pos(app, buffer, mark_pos);
+    
+    if ((VimMode_VisualLine == vim_state.mode)) {
+        if ((mark_pos <= result.seek_pos)) {
+            if (line_start != line_end) {
+                result.seek_pos = line_end - 1;
+            }
+            
+            view_set_mark(app, view, seek_pos(mark_line_start));
+        } else {
+            result.seek_pos = line_start;
+            
+            if (mark_line_start != mark_line_end) {
+                view_set_mark(app, view, seek_pos(mark_line_end - 1));
+            }
+        }
     }
     
     result.range_ = vim_apply_range_style(app, view, buffer, Ii64(start_pos, result.seek_pos), result.style);
@@ -6631,23 +6664,36 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     
     VimBind(goto_line, vim_leader, vim_key(KeyCode_G));
     
+    VimBind(kill_buffer, vim_leader, vim_key(KeyCode_K));
+    
     VimBind(interactive_switch_buffer, vim_leader, vim_key(KeyCode_F));
     VimBind(y4_interactive_switch_buffer_other_panel, vim_leader, vim_key(KeyCode_F, KeyCode_Shift));
+    
     VimBind(interactive_open_or_new, vim_leader, vim_key(KeyCode_E));
     VimBind(y4_interactive_open_or_new_other_panel, vim_leader, vim_key(KeyCode_E, KeyCode_Shift));
     
-    VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_J));
-    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_J, KeyCode_Shift));
-    VimBind(f4_go_to_definition, vim_leader, vim_key(KeyCode_K));
-    VimBind(f4_go_to_definition_same_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
+    VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_L));
+    VimBind(y4_search_for_definition__project_wide_other_panel, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
+    
+    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
+    VimBind(y4_search_for_definition__current_file_other_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
+    
+    VimBind(f4_go_to_definition, vim_leader, vim_key(KeyCode_J));
+    VimBind(f4_go_to_definition_same_panel, vim_leader, vim_key(KeyCode_J, KeyCode_Shift));
+    
     VimBind(f4_code_peek, vim_leader, vim_key(KeyCode_P));
-    VimBind(f4_code_peek_clear, vim_leader, vim_key(KeyCode_U));
+    VimBind(f4_code_peek_clear, vim_leader, vim_key(KeyCode_P, KeyCode_Shift));
     VimBind(f4_code_peek_yank, vim_leader, vim_key(KeyCode_Y));
     
     VimBind(list_all_substring_locations_case_insensitive, vim_leader, vim_key(KeyCode_S));
     VimBind(list_all_locations, vim_leader, vim_key(KeyCode_S, KeyCode_Shift));
     
-    VimBind(f4_toggle_compilation_expand, vim_leader, vim_key(KeyCode_C));
+    VimBind(f4_toggle_compilation_expand, vim_leader, vim_key(KeyCode_M));
+    
+    VimBind(casey_find_matching_file, vim_leader, vim_key(KeyCode_O));
+    VimBind(y4_find_matching_file_other_panel, vim_leader, vim_key(KeyCode_O, KeyCode_Shift));
+    
+    VimBind(view_buffer_other_panel, vim_leader, vim_key(KeyCode_D));
     
     VimBind(f4_switch_syntax_option, vim_leader, vim_key(KeyCode_Comma));
     
