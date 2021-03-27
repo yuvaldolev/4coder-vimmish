@@ -6664,7 +6664,7 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     
     VimBind(goto_line, vim_leader, vim_key(KeyCode_G));
     
-    VimBind(kill_buffer, vim_leader, vim_key(KeyCode_K));
+    VimBind(kill_buffer, vim_leader, vim_key(KeyCode_0));
     
     VimBind(interactive_switch_buffer, vim_leader, vim_key(KeyCode_F));
     VimBind(y4_interactive_switch_buffer_other_panel, vim_leader, vim_key(KeyCode_F, KeyCode_Shift));
@@ -6672,11 +6672,11 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     VimBind(interactive_open_or_new, vim_leader, vim_key(KeyCode_E));
     VimBind(y4_interactive_open_or_new_other_panel, vim_leader, vim_key(KeyCode_E, KeyCode_Shift));
     
-    VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_L));
-    VimBind(y4_search_for_definition__project_wide_other_panel, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
+    VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_K));
+    VimBind(y4_search_for_definition__project_wide_other_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
     
-    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
-    VimBind(y4_search_for_definition__current_file_other_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
+    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
+    VimBind(y4_search_for_definition__current_file_other_panel, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
     
     VimBind(f4_go_to_definition, vim_leader, vim_key(KeyCode_J));
     VimBind(f4_go_to_definition_same_panel, vim_leader, vim_key(KeyCode_J, KeyCode_Shift));
