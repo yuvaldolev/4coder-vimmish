@@ -4075,14 +4075,9 @@ CUSTOM_COMMAND_SIG(vim_new_line_above) {
     i64 line = get_line_number_from_pos(app, buffer, pos);
     
     seek_beginning_of_textual_line(app);
-    move_left(app);
+    write_text(app, string_u8_litexpr("\n"));
+    move_up(app);
     
-#if VIM_USE_EXPERIMENTAL_AUTO_INDENT
-    vim_write_text_and_auto_indent_internal_experimental(app, string_u8_litexpr("\n"), line);
-#else
-    (void)line;
-    vim_write_text_and_auto_indent_internal(app, string_u8_litexpr("\n"));
-#endif
     vim_enter_insert_mode(app);
 }
 
