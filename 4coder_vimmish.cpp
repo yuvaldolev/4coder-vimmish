@@ -6670,7 +6670,7 @@ vim_setup_default_mapping(Application_Links* app, Mapping *mapping, Vim_Key vim_
     VimBind(f4_search_for_definition__project_wide, vim_leader, vim_key(KeyCode_K));
     VimBind(y4_search_for_definition__project_wide_other_panel, vim_leader, vim_key(KeyCode_K, KeyCode_Shift));
     
-    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
+    VimBind(f4_search_for_definition__current_file, vim_leader, vim_key(KeyCode_L));
     VimBind(y4_search_for_definition__current_file_other_panel, vim_leader, vim_key(KeyCode_L, KeyCode_Shift));
     
     VimBind(f4_go_to_definition, vim_leader, vim_key(KeyCode_J));
